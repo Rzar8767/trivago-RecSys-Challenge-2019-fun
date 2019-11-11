@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import gc
 from tqdm.auto import tqdm
 
 
@@ -60,7 +61,8 @@ def reset_step_for_duplicated_sessions(df):
         mask = (df.user_id == row.user_id) & (df.session_id == row.session_id)
         sess_length = sum(mask * 1)
         res_df.loc[mask, 'step'] = np.arange(1, sess_length + 1, dtype='int')
-
+    # Save the df
+    res_df.to_csv("./data/train_noduplicate.csv", sep=",", index=False)
     return res_df
 
 
@@ -83,6 +85,7 @@ def split_dataset(df, percent, name):
     split_time = df.timestamp.min() + int(duration * percent)
     df_train = df[df.timestamp <= split_time]
     df_test = df[df.timestamp > split_time]
+    df = pd.DataFrame()
     print("Last of train set:")
     print_dataset(df_train.tail())
     print("First of test set:")
@@ -93,33 +96,28 @@ def split_dataset(df, percent, name):
     # Move interrupted sessions into the train set
 
     # Get sessions that are in test and train set and find the overlap
-    only_sessions_train = df_train.iloc[:, 1:2].copy()
-    only_sessions_test = df_test.iloc[:, 1:2].copy()
-    overlap = pd.merge(only_sessions_train, only_sessions_test, how='inner')
+    overlap_unique = pd.merge(df_train.iloc[:, 1:2], df_test.iloc[:, 1:2], how='inner').session_id.unique()
+
+    # GC to collect previous 4GB of memory
+    gc.collect()
 
     # Locate all the sessions
-    print("Sessions in train set:", len(df_train.session_id.unique()))
-    print("Sessions in test set:", len(df_test.session_id.unique()))
-    print("Sessions cut in half:\n", overlap.session_id.unique())
+    # Merge df_train and the overlap from test
+    df_train = pd.merge(df_train, df_test[df_test.session_id.isin(overlap_unique)], how='outer')
+    # Remove overlap
+    df_test = df_test[~df_test.session_id.isin(overlap_unique)]
 
-    overlap_unique = overlap.session_id.unique()
-
-    overlap_from_test = df_test[df.session_id.isin(overlap_unique)]
-    df_train = pd.merge(df_train, overlap_from_test, how='outer')
-    df_test = df_test[~df.session_id.isin(overlap_unique)]
-    ground_truth = df_test.copy()
+    # Save ground truth
+    df_test.to_csv(f"./processed/ground_truth_{name}.csv", sep=",", index=False)
 
     # Test if sessions still overlap in the dataframes
     is_session_overlap(df_train, df_test)
 
     # Hide last checkouts
-    test = df_test.head(15)
-    hide_last_checkouts(test)
-    print(test)
+    hide_last_checkouts(df_test)
 
     df_train.to_csv(f"./processed/train_set_{name}.csv", sep=",", index=False)
     df_test.to_csv(f"./processed/test_set_{name}.csv", sep=",", index=False)
-    ground_truth.to_csv(f"./processed/ground_truth_{name}.csv", sep=",", index=False)
 
 
 # Source: https://github.com/keyblade95/recsys2019/blob/master/preprocess.py
@@ -159,8 +157,7 @@ if __name__ == '__main__':
         save_medium_set(df)
         save_large_set(df)
     if full_set:
-        full = pd.read_csv('./data/train.csv')
-        full = reset_step_for_duplicated_sessions(full)
+        full = reset_step_for_duplicated_sessions(pd.read_csv('./data/train.csv'))
         print(len(full))
         split_dataset(full, 0.8, "full")
     else:
