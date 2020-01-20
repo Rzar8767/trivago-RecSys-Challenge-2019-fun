@@ -24,6 +24,6 @@ def score():
 
 
 if __name__ == '__main__':
-    #baseline()
+    baseline()
     verify()
-    #score()
+    score()

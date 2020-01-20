@@ -2,6 +2,7 @@ from pathlib import Path
 
 import click
 import pandas as pd
+import gc
 
 from . import functions as f
 
@@ -23,9 +24,15 @@ def main(data_path, train_path, test_path, subm_path):
     df_train = pd.read_csv(train_csv)
     print(f"Reading {test_csv} ...")
     df_test = pd.read_csv(test_csv)
+    print(f"Reading tested_features.csv")
+    df_ft = pd.read_csv('./processed/tested_features.csv')
+
+    gc.collect()
 
     print("Get popular items...")
-    df_popular = f.get_popularity(df_train)
+    #df_popular = f.get_popularity(df_train)
+    df_popular = f.get_popularity_and_information(df_train, df_ft)
+    gc.collect()
 
     print("Identify target rows...")
     df_target = f.get_submission_target(df_test)
